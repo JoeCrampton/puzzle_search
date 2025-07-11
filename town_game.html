@@ -302,9 +302,9 @@
                 ctx.textAlign = 'left';
                 ctx.fillText(this.name, SCREEN_WIDTH / 2 - 50, 120);
                 
-                // Draw puzzle piece if not collected
-                if (!game.collectedFromBuildings.has(this.name)) {
-                    this.drawPuzzlePiece();
+                // Draw puzzle piece if this building has one and it's not collected
+                if (game.buildingsWithPieces.has(this.name) && !game.collectedFromBuildings.has(this.name)) {
+                    this.drawPuzzlePiece(game.buildingToPiece[this.name], game);
                 }
                 
                 // Exit door at bottom
@@ -320,37 +320,74 @@
                 ctx.textAlign = 'center';
                 if (game.collectedFromBuildings.has(this.name)) {
                     ctx.fillText('Puzzle piece collected! • Walk to door or press SPACE to exit', SCREEN_WIDTH / 2, SCREEN_HEIGHT - 20);
-                } else {
+                } else if (game.buildingsWithPieces.has(this.name)) {
                     ctx.fillText('Walk to puzzle piece to collect it • Walk to door or press SPACE to exit', SCREEN_WIDTH / 2, SCREEN_HEIGHT - 20);
+                } else {
+                    ctx.fillText('No puzzle piece here • Walk to door or press SPACE to exit', SCREEN_WIDTH / 2, SCREEN_HEIGHT - 20);
                 }
             }
             
-            drawPuzzlePiece() {
+            drawPuzzlePiece(pieceNumber, game) {
                 // Draw a puzzle piece in the center of the room
                 const pieceX = SCREEN_WIDTH / 2;
                 const pieceY = SCREEN_HEIGHT / 2;
+                const pieceSize = 80;
                 
-                // Puzzle piece background (bright yellow)
-                ctx.fillStyle = '#FFD700';
-                ctx.beginPath();
-                ctx.arc(pieceX, pieceY, 25, 0, Math.PI * 2);
-                ctx.fill();
+                if (game.imageLoaded) {
+                    // Calculate source coordinates for this piece (2x4 grid)
+                    const col = pieceNumber % 4;
+                    const row = Math.floor(pieceNumber / 4);
+                    
+                    const sourceWidth = game.unicornImage.width / 4;
+                    const sourceHeight = game.unicornImage.height / 2;
+                    const sourceX = col * sourceWidth;
+                    const sourceY = row * sourceHeight;
+                    
+                    // Draw the image piece
+                    ctx.drawImage(
+                        game.unicornImage,
+                        sourceX, sourceY, sourceWidth, sourceHeight,
+                        pieceX - pieceSize/2, pieceY - pieceSize/2, pieceSize, pieceSize
+                    );
+                    
+                    // Add puzzle piece border
+                    ctx.strokeStyle = '#FFD700';
+                    ctx.lineWidth = 4;
+                    ctx.strokeRect(pieceX - pieceSize/2, pieceY - pieceSize/2, pieceSize, pieceSize);
+                    
+                    // Inner black border for definition
+                    ctx.strokeStyle = COLORS.BLACK;
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(pieceX - pieceSize/2, pieceY - pieceSize/2, pieceSize, pieceSize);
+                } else {
+                    // Fallback: draw colored square with piece number
+                    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F'];
+                    
+                    ctx.fillStyle = colors[pieceNumber % colors.length];
+                    ctx.fillRect(pieceX - pieceSize/2, pieceY - pieceSize/2, pieceSize, pieceSize);
+                    ctx.strokeStyle = COLORS.BLACK;
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(pieceX - pieceSize/2, pieceY - pieceSize/2, pieceSize, pieceSize);
+                }
                 
-                // Puzzle piece border
+                // Piece number label
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                ctx.fillRect(pieceX - 15, pieceY + pieceSize/2 - 15, 30, 20);
                 ctx.strokeStyle = COLORS.BLACK;
-                ctx.lineWidth = 3;
-                ctx.stroke();
+                ctx.lineWidth = 1;
+                ctx.strokeRect(pieceX - 15, pieceY + pieceSize/2 - 15, 30, 20);
                 
-                // Puzzle piece emoji
-                ctx.font = '30px Arial';
+                ctx.font = 'bold 14px Arial';
                 ctx.textAlign = 'center';
                 ctx.fillStyle = COLORS.BLACK;
-                ctx.fillText('🧩', pieceX, pieceY + 8);
+                ctx.fillText(`${pieceNumber + 1}`, pieceX, pieceY + pieceSize/2 - 2);
             }
             
             checkPuzzlePieceCollection(player, game) {
-                // Check if player is near the puzzle piece
-                if (game.collectedFromBuildings.has(this.name)) return false;
+                // Check if this building has a puzzle piece and it's not collected
+                if (!game.buildingsWithPieces.has(this.name) || game.collectedFromBuildings.has(this.name)) {
+                    return false;
+                }
                 
                 const playerBounds = player.getBounds();
                 const pieceX = SCREEN_WIDTH / 2;
@@ -388,9 +425,27 @@
                 this.buildings = this.createBuildings();
                 
                 // Puzzle system
-                this.totalPuzzlePieces = this.buildings.length; // One piece per building
+                this.totalPuzzlePieces = 8; // 8 pieces of unicorn puzzle
                 this.collectedPieces = 0;
                 this.collectedFromBuildings = new Set(); // Track which buildings we've collected from
+                
+                // Load unicorn image
+                this.unicornImage = new Image();
+                this.unicornImage.src = 'vecteezy_unicorn-strolling-on-the-beach-cartoon-clipart_6823393.jpg';
+                this.imageLoaded = false;
+                
+                this.unicornImage.onload = () => {
+                    this.imageLoaded = true;
+                    console.log('Unicorn image loaded successfully');
+                };
+                
+                this.unicornImage.onerror = () => {
+                    console.error('Failed to load unicorn image');
+                    this.imageLoaded = false;
+                };
+                
+                // Randomly assign 8 puzzle pieces to buildings
+                this.assignPuzzlePieces();
                 
                 this.setupEventListeners();
             }
@@ -415,6 +470,21 @@
                     new Building(9, 9, 2, 2, COLORS.SCHOOL, 'School', 'school'),
                     new Building(12, 9, 2, 2, COLORS.PARK_OFFICE, 'Park Office', 'park')
                 ];
+            }
+            
+            assignPuzzlePieces() {
+                // Create array of all building names
+                const allBuildings = this.buildings.map(b => b.name);
+                
+                // Shuffle array and take first 8 buildings
+                const shuffled = allBuildings.sort(() => Math.random() - 0.5);
+                this.buildingsWithPieces = new Set(shuffled.slice(0, 8));
+                
+                // Map each selected building to a puzzle piece number
+                this.buildingToPiece = {};
+                shuffled.slice(0, 8).forEach((buildingName, index) => {
+                    this.buildingToPiece[buildingName] = index;
+                });
             }
             
             setupEventListeners() {
@@ -466,6 +536,9 @@
                 this.collectedFromBuildings.clear();
                 this.currentScreen = 'town';
                 this.currentBuilding = null;
+                
+                // Randomly reassign puzzle pieces
+                this.assignPuzzlePieces();
                 
                 // Reset player position to starting location
                 const startPos = gridToScreen(7, 4);
@@ -683,50 +756,120 @@
             drawInventory() {
                 // Sidebar title
                 ctx.fillStyle = COLORS.WHITE;
-                ctx.font = 'bold 20px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText('Inventory', SIDEBAR_WIDTH / 2, 40);
-                
-                // Puzzle piece section
-                const sectionY = 80;
-                
-                // Section background
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-                ctx.fillRect(10, sectionY, SIDEBAR_WIDTH - 20, 120);
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-                ctx.lineWidth = 1;
-                ctx.strokeRect(10, sectionY, SIDEBAR_WIDTH - 20, 120);
-                
-                // Puzzle piece icon (larger)
-                ctx.font = '36px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText('🧩', SIDEBAR_WIDTH / 2, sectionY + 45);
-                
-                // Collection count (prominent)
-                ctx.fillStyle = COLORS.WHITE;
-                ctx.font = 'bold 24px Arial';
-                ctx.fillText(`${this.collectedPieces}`, SIDEBAR_WIDTH / 2, sectionY + 75);
-                
-                // Separator line
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.moveTo(SIDEBAR_WIDTH / 2 - 15, sectionY + 80);
-                ctx.lineTo(SIDEBAR_WIDTH / 2 + 15, sectionY + 80);
-                ctx.stroke();
-                
-                // Total count
                 ctx.font = 'bold 18px Arial';
-                ctx.fillStyle = '#BBB';
-                ctx.fillText(`${this.totalPuzzlePieces}`, SIDEBAR_WIDTH / 2, sectionY + 95);
+                ctx.textAlign = 'center';
+                ctx.fillText('Unicorn Puzzle', SIDEBAR_WIDTH / 2, 30);
                 
-                // Label
-                ctx.font = '14px Arial';
-                ctx.fillStyle = COLORS.WHITE;
-                ctx.fillText('Puzzle Pieces', SIDEBAR_WIDTH / 2, sectionY + 115);
+                // Collection count
+                ctx.font = 'bold 16px Arial';
+                ctx.fillText(`${this.collectedPieces} of ${this.totalPuzzlePieces} pieces`, SIDEBAR_WIDTH / 2, 50);
                 
-                // Progress bar
-                const progressY = sectionY + 130;
+                // Live puzzle assembly area
+                const puzzleStartY = 70;
+                const puzzleWidth = SIDEBAR_WIDTH - 20;
+                const puzzleHeight = puzzleWidth * 0.75; // 4:3 aspect ratio
+                const puzzleX = 10;
+                
+                // Puzzle background
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+                ctx.fillRect(puzzleX, puzzleStartY, puzzleWidth, puzzleHeight);
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(puzzleX, puzzleStartY, puzzleWidth, puzzleHeight);
+                
+                // Draw collected puzzle pieces in their correct positions
+                if (this.imageLoaded) {
+                    const pieceWidth = puzzleWidth / 4;
+                    const pieceHeight = puzzleHeight / 2;
+                    
+                    // Draw grid lines
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+                    ctx.lineWidth = 1;
+                    
+                    // Vertical grid lines
+                    for (let i = 1; i < 4; i++) {
+                        const x = puzzleX + (i * pieceWidth);
+                        ctx.beginPath();
+                        ctx.moveTo(x, puzzleStartY);
+                        ctx.lineTo(x, puzzleStartY + puzzleHeight);
+                        ctx.stroke();
+                    }
+                    
+                    // Horizontal grid line
+                    const y = puzzleStartY + puzzleHeight / 2;
+                    ctx.beginPath();
+                    ctx.moveTo(puzzleX, y);
+                    ctx.lineTo(puzzleX + puzzleWidth, y);
+                    ctx.stroke();
+                    
+                    // Draw collected pieces
+                    for (const [buildingName, pieceNumber] of Object.entries(this.buildingToPiece)) {
+                        if (this.collectedFromBuildings.has(buildingName)) {
+                            const col = pieceNumber % 4;
+                            const row = Math.floor(pieceNumber / 4);
+                            
+                            const destX = puzzleX + (col * pieceWidth);
+                            const destY = puzzleStartY + (row * pieceHeight);
+                            
+                            // Calculate source coordinates
+                            const sourceWidth = this.unicornImage.width / 4;
+                            const sourceHeight = this.unicornImage.height / 2;
+                            const sourceX = col * sourceWidth;
+                            const sourceY = row * sourceHeight;
+                            
+                            // Draw the piece
+                            ctx.drawImage(
+                                this.unicornImage,
+                                sourceX, sourceY, sourceWidth, sourceHeight,
+                                destX + 1, destY + 1, pieceWidth - 2, pieceHeight - 2
+                            );
+                            
+                            // Add piece border
+                            ctx.strokeStyle = '#4CAF50';
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(destX + 1, destY + 1, pieceWidth - 2, pieceHeight - 2);
+                        }
+                    }
+                    
+                    // Draw empty piece outlines for uncollected pieces
+                    for (let pieceNumber = 0; pieceNumber < 8; pieceNumber++) {
+                        const collected = Object.entries(this.buildingToPiece).some(([buildingName, pNum]) => 
+                            pNum === pieceNumber && this.collectedFromBuildings.has(buildingName)
+                        );
+                        
+                        if (!collected) {
+                            const col = pieceNumber % 4;
+                            const row = Math.floor(pieceNumber / 4);
+                            
+                            const destX = puzzleX + (col * pieceWidth);
+                            const destY = puzzleStartY + (row * pieceHeight);
+                            
+                            // Draw empty piece outline
+                            ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+                            ctx.lineWidth = 1;
+                            ctx.setLineDash([5, 5]);
+                            ctx.strokeRect(destX + 1, destY + 1, pieceWidth - 2, pieceHeight - 2);
+                            ctx.setLineDash([]);
+                            
+                            // Piece number
+                            ctx.font = '12px Arial';
+                            ctx.textAlign = 'center';
+                            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+                            ctx.fillText(`${pieceNumber + 1}`, destX + pieceWidth/2, destY + pieceHeight/2 + 3);
+                        }
+                    }
+                } else {
+                    // Fallback if image not loaded
+                    ctx.font = '24px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                    ctx.fillText('🦄', SIDEBAR_WIDTH / 2, puzzleStartY + puzzleHeight/2);
+                    ctx.font = '12px Arial';
+                    ctx.fillText('Loading...', SIDEBAR_WIDTH / 2, puzzleStartY + puzzleHeight/2 + 30);
+                }
+                
+                // Progress bar at bottom
+                const progressY = puzzleStartY + puzzleHeight + 20;
                 const progressWidth = SIDEBAR_WIDTH - 40;
                 const progressHeight = 8;
                 const progressX = 20;
@@ -744,6 +887,12 @@
                 ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
                 ctx.lineWidth = 1;
                 ctx.strokeRect(progressX, progressY, progressWidth, progressHeight);
+                
+                // Instructions
+                ctx.font = '10px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillStyle = '#BBB';
+                ctx.fillText('Collect pieces from buildings', SIDEBAR_WIDTH / 2, progressY + 25);
             }
             
             update() {
@@ -790,31 +939,52 @@
                 ctx.font = '24px Arial';
                 ctx.fillText('You collected all the puzzle pieces!', SCREEN_WIDTH / 2, 200);
                 
-                // Show collected pieces as a grid
-                const pieceSize = 60;
-                const startX = SCREEN_WIDTH / 2 - (4 * pieceSize) / 2;
-                const startY = 250;
+                // Show completed unicorn puzzle
+                const puzzleWidth = 320;
+                const puzzleHeight = 240;
+                const puzzleX = SCREEN_WIDTH / 2 - puzzleWidth / 2;
+                const puzzleY = 230;
                 
-                let pieceIndex = 0;
-                for (let row = 0; row < 3; row++) {
-                    for (let col = 0; col < 4; col++) {
-                        if (pieceIndex < this.collectedPieces) {
-                            const x = startX + col * pieceSize;
-                            const y = startY + row * pieceSize;
-                            
-                            // Draw puzzle piece
-                            ctx.fillStyle = '#FFD700';
-                            ctx.fillRect(x, y, pieceSize - 5, pieceSize - 5);
-                            ctx.strokeStyle = COLORS.BLACK;
-                            ctx.lineWidth = 2;
-                            ctx.strokeRect(x, y, pieceSize - 5, pieceSize - 5);
-                            
-                            // Puzzle piece emoji
-                            ctx.font = '30px Arial';
-                            ctx.fillText('🧩', x + pieceSize/2, y + pieceSize/2 + 8);
-                        }
-                        pieceIndex++;
+                if (this.imageLoaded) {
+                    // Draw the complete unicorn image
+                    ctx.drawImage(this.unicornImage, puzzleX, puzzleY, puzzleWidth, puzzleHeight);
+                    
+                    // Draw grid lines to show puzzle pieces
+                    ctx.strokeStyle = '#FFD700';
+                    ctx.lineWidth = 3;
+                    
+                    // Vertical lines
+                    for (let i = 1; i < 4; i++) {
+                        const x = puzzleX + (i * puzzleWidth / 4);
+                        ctx.beginPath();
+                        ctx.moveTo(x, puzzleY);
+                        ctx.lineTo(x, puzzleY + puzzleHeight);
+                        ctx.stroke();
                     }
+                    
+                    // Horizontal line
+                    const y = puzzleY + puzzleHeight / 2;
+                    ctx.beginPath();
+                    ctx.moveTo(puzzleX, y);
+                    ctx.lineTo(puzzleX + puzzleWidth, y);
+                    ctx.stroke();
+                    
+                    // Outer border
+                    ctx.strokeStyle = COLORS.BLACK;
+                    ctx.lineWidth = 4;
+                    ctx.strokeRect(puzzleX, puzzleY, puzzleWidth, puzzleHeight);
+                } else {
+                    // Fallback if image didn't load
+                    ctx.fillStyle = '#FFF8DC';
+                    ctx.fillRect(puzzleX, puzzleY, puzzleWidth, puzzleHeight);
+                    ctx.strokeStyle = COLORS.BLACK;
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(puzzleX, puzzleY, puzzleWidth, puzzleHeight);
+                    
+                    ctx.font = '80px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillStyle = COLORS.BLACK;
+                    ctx.fillText('🦄', SCREEN_WIDTH / 2, puzzleY + puzzleHeight/2 + 25);
                 }
                 
                 // Play Again Button
