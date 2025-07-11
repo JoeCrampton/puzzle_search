@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Town Explorer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background-color: #2c3e50;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        #gameCanvas {
+            border: 3px solid #34495e;
+            background-color: #ecf0f1;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            outline: none;
+        }
+        
+        h1 {
+            color: #ecf0f1;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        
+        .instructions {
+            color: #bdc3c7;
+            text-align: center;
+            margin-top: 10px;
+            font-size: 14px;
+            max-width: 600px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🏘️ Town Explorer</h1>
+    <canvas id="gameCanvas" width="1000" height="700" tabindex="0"></canvas>
+    <div class="instructions">
+        <p>Use arrow keys to move • Walk on roads and driveways • Enter buildings through doors • Press SPACE to exit buildings</p>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        const SCREEN_WIDTH = 1000;
+        const SCREEN_HEIGHT = 700;
+        
+        // Grid system: 14 columns × 9 rows
+        const GRID_COLS = 14;
+        const GRID_ROWS = 9;
+        const CELL_WIDTH = SCREEN_WIDTH / GRID_COLS;  // ~71px per cell
+        const CELL_HEIGHT = SCREEN_HEIGHT / GRID_ROWS; // ~78px per cell
+        
+        const DRIVEWAY_WIDTH = 40;
+        const DRIVEWAY_HEIGHT = 17;
+        const DOOR_SIZE = 20;
+        
+        // Colors
+        const COLORS = {
+            GRASS: '#4CAF50',
+            ROAD: '#616161',
+            DRIVEWAY: '#757575',
+            PLAYER: '#2196F3',
+            DOOR: '#8D6E63',
+            WHITE: '#FFFFFF',
+            BLACK: '#000000',
+            
+            // Building colors
+            FIRE_STATION: '#F44336',
+            POLICE: '#3F51B5',
+            HOSPITAL: '#FF9800',
+            SCHOOL: '#9C27B0',
+            LIBRARY: '#607D8B',
+            RESTAURANT: '#E91E63',
+            BANK: '#795548',
+            MUSEUM: '#009688',
+            POST_OFFICE: '#FF5722',
+            GROCERY: '#8BC34A',
+            GAS_STATION: '#FFC107',
+            PARK_OFFICE: '#4CAF50'
+        };
+        
+        // Convert grid coordinates (1,1 = bottom left) to screen coordinates
+        function gridToScreen(gridX, gridY) {
+            return {
+                x: (gridX - 1) * CELL_WIDTH,
+                y: SCREEN_HEIGHT - (gridY * CELL_HEIGHT)
+            };
+        }
+        
+        class Player {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.size = 14;
+                this.speed = 3;
+            }
+            
+            move(dx, dy, game) {
+                const newX = this.x + dx * this.speed;
+                const newY = this.y + dy * this.speed;
+                
+                if (game.canMoveTo(newX, this.y, this.size)) {
+                    this.x = newX;
+                }
+                if (game.canMoveTo(this.x, newY, this.size)) {
+                    this.y = newY;
+                }
+            }
+            
+            draw() {
+                // Player as a blue circle with simple face
+                ctx.fillStyle = COLORS.PLAYER;
+                ctx.beginPath();
+                ctx.arc(this.x + this.size/2, this.y + this.size/2, this.size/2, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Eyes
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.beginPath();
+                ctx.arc(this.x + this.size/2 - 3, this.y + this.size/2 - 2, 2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(this.x + this.size/2 + 3, this.y + this.size/2 - 2, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            getBounds() {
+                return {
+                    x: this.x,
+                    y: this.y,
+                    width: this.size,
+                    height: this.size
+                };
+            }
+        }
+        
+        class Building {
+            constructor(gridX, gridY, gridWidth, gridHeight, color, name, type) {
+                this.gridX = gridX;
+                this.gridY = gridY;
+                this.gridWidth = gridWidth;
+                this.gridHeight = gridHeight;
+                this.color = color;
+                this.name = name;
+                this.type = type;
+                
+                // Convert grid coordinates to screen coordinates
+                const screenPos = gridToScreen(gridX, gridY);
+                this.x = screenPos.x + 5; // 5px margin within cell
+                this.y = screenPos.y + 5;
+                this.width = gridWidth * CELL_WIDTH - 10; // 10px total margin
+                this.height = gridHeight * CELL_HEIGHT - 10;
+                
+                // Door position (bottom center of building)
+                this.doorX = this.x + (this.width - DOOR_SIZE) / 2;
+                this.doorY = this.y + this.height;
+                
+                // Calculate driveway to nearest road
+                this.calculateDriveway();
+            }
+            
+            calculateDriveway() {
+                // Determine which road to connect to based on building position
+                let roadRow;
+                if (this.gridY >= 8) {
+                    // Top buildings (rows 8-9) connect to road on row 7
+                    roadRow = 7;
+                } else if (this.gridY >= 5) {
+                    // Middle buildings (rows 5-6) connect to road on row 4
+                    roadRow = 4;
+                } else {
+                    // Bottom buildings (rows 2-3) connect to road on row 1
+                    roadRow = 1;
+                }
+                
+                // Calculate the actual road position with the centered narrow roads
+                const roadScreenPos = gridToScreen(1, roadRow);
+                const roadHeight = CELL_HEIGHT * 0.75;
+                const roadVerticalOffset = CELL_HEIGHT * 0.125;
+                const roadY = roadScreenPos.y + roadVerticalOffset;
+                
+                // Driveway positioning
+                this.drivewayX = this.doorX + (DOOR_SIZE - DRIVEWAY_WIDTH) / 2;
+                this.drivewayWidth = DRIVEWAY_WIDTH;
+                
+                // Calculate driveway to just touch road edge (not overlap)
+               
+                    // All buildings: driveway goes down from door to top edge of road
+                    this.drivewayY = this.doorY + 1;
+                    this.drivewayHeight = roadY - this.drivewayY;
+
+            }
+            
+            
+            getBuildingIcon() {
+                // Return appropriate emoji icon based on building type
+                switch(this.type) {
+                    case 'fire': return '🚒';
+                    case 'police': return '👮';
+                    case 'hospital': return '🏥';
+                    case 'school': return '🏫';
+                    case 'library': return '📚';
+                    case 'restaurant': return '🍽️';
+                    case 'bank': return '🏦';
+                    case 'museum': return '🏛️';
+                    case 'post': return '📮';
+                    case 'grocery': return '🛒';
+                    case 'gas': return '⛽';
+                    case 'park': return '🌳';
+                    case 'clinic': return '⚕️';
+                    default: return '🏢';
+                }
+            }
+            
+            draw() {
+                // Simple background rectangle
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                ctx.strokeStyle = COLORS.BLACK;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(this.x, this.y, this.width, this.height);
+                
+                // Building icon (large emoji in center)
+                const icon = this.getBuildingIcon();
+                ctx.font = '48px Arial';
+                ctx.textAlign = 'center';
+                const iconX = this.x + this.width / 2;
+                const iconY = this.y + this.height / 2 + 15; // Offset for text baseline
+                ctx.fillText(icon, iconX, iconY);
+                
+                // Building label
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.font = 'bold 12px Arial';
+                ctx.textAlign = 'center';
+                const textX = this.x + this.width / 2;
+                const textY = this.y + this.height - 8;
+                
+                // Text background for readability
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                const textWidth = ctx.measureText(this.name).width;
+                ctx.fillRect(textX - textWidth/2 - 4, textY - 12, textWidth + 8, 16);
+                
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.fillText(this.name, textX, textY);
+                
+                // Door
+                ctx.fillStyle = COLORS.DOOR;
+                ctx.fillRect(this.doorX, this.doorY, DOOR_SIZE, 8);
+                ctx.strokeStyle = COLORS.BLACK;
+                ctx.lineWidth = 1;
+                ctx.strokeRect(this.doorX, this.doorY, DOOR_SIZE, 8);
+                
+                // Door handle
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.beginPath();
+                ctx.arc(this.doorX + DOOR_SIZE - 3, this.doorY + 4, 1.5, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Driveway
+                ctx.fillStyle = COLORS.DRIVEWAY;
+                ctx.fillRect(this.drivewayX, this.drivewayY, this.drivewayWidth, this.drivewayHeight);
+            }
+            
+            checkDoorCollision(player) {
+                const playerBounds = player.getBounds();
+                return playerBounds.x < this.doorX + DOOR_SIZE &&
+                       playerBounds.x + playerBounds.width > this.doorX &&
+                       playerBounds.y < this.doorY + 8 &&
+                       playerBounds.y + playerBounds.height > this.doorY;
+            }
+            
+            drawInterior() {
+                // Clear screen with interior color
+                ctx.fillStyle = '#F5F5F5';
+                ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+                
+                // Building outline (walls)
+                ctx.strokeStyle = COLORS.BLACK;
+                ctx.lineWidth = 8;
+                ctx.strokeRect(50, 50, SCREEN_WIDTH - 100, SCREEN_HEIGHT - 100);
+                
+                // Building icon (left of title)
+                const icon = this.getBuildingIcon();
+                ctx.font = '48px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(icon, SCREEN_WIDTH / 2 - 100, 130);
+                
+                // Building name (to the right of icon)
+                ctx.fillStyle = COLORS.BLACK;
+                ctx.font = '36px Arial';
+                ctx.textAlign = 'left';
+                ctx.fillText(this.name, SCREEN_WIDTH / 2 - 50, 120);
+                
+                // Exit door at bottom
+                ctx.fillStyle = COLORS.DOOR;
+                ctx.fillRect((SCREEN_WIDTH - 30) / 2, SCREEN_HEIGHT - 58, 30, 8);
+                ctx.strokeStyle = COLORS.BLACK;
+                ctx.lineWidth = 2;
+                ctx.strokeRect((SCREEN_WIDTH - 30) / 2, SCREEN_HEIGHT - 58, 30, 8);
+                
+                // Instructions
+                ctx.fillStyle = '#666';
+                ctx.font = '18px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Walk around inside • Walk to door or press SPACE to exit', SCREEN_WIDTH / 2, SCREEN_HEIGHT - 20);
+            }
+            
+            checkInteriorExit(player) {
+                const playerBounds = player.getBounds();
+                const exitDoorX = (SCREEN_WIDTH - 30) / 2;
+                const exitDoorY = SCREEN_HEIGHT - 58;
+                
+                // Check if player is touching the exit door
+                return playerBounds.x < exitDoorX + 100 &&
+                       playerBounds.x + playerBounds.width > exitDoorX &&
+                       playerBounds.y < exitDoorY + 100 &&
+                       playerBounds.y + playerBounds.height > exitDoorY;
+            }
+        }
+        
+        class Game {
+            constructor() {
+                // Start player on road (row 4)
+                const startPos = gridToScreen(7, 4);
+                this.player = new Player(startPos.x + 30, startPos.y + 30);
+                this.currentScreen = 'town';
+                this.currentBuilding = null;
+                this.keys = {};
+                this.buildings = this.createBuildings();
+                this.setupEventListeners();
+            }
+            
+            createBuildings() {
+                return [
+                    // Bottom row buildings (rows 2-3)
+                    new Building(2, 3, 2, 2, COLORS.FIRE_STATION, 'Fire Station', 'fire'),
+                    new Building(5, 3, 2, 2, COLORS.POLICE, 'Police Station', 'police'),
+                    new Building(9, 3, 2, 2, COLORS.GROCERY, 'Grocery Store', 'grocery'),
+                    new Building(12, 3, 2, 2, COLORS.BANK, 'Bank', 'bank'),
+                    
+                    // Middle row buildings (rows 5-6)
+                    new Building(2, 6, 2, 2, COLORS.RESTAURANT, 'Restaurant', 'restaurant'),
+                    new Building(5, 6, 3, 2, COLORS.MUSEUM, 'Museum', 'museum'), // 3x2 building
+                    new Building(9, 6, 2, 2, COLORS.POST_OFFICE, 'Post Office', 'post'),
+                    new Building(12, 6, 2, 2, COLORS.LIBRARY, 'Library', 'library'),
+                    
+                    // Top row buildings (rows 8-9)
+                    new Building(2, 9, 2, 2, COLORS.HOSPITAL, 'Hospital', 'hospital'),
+                    new Building(5, 9, 3, 2, COLORS.GAS_STATION, 'Gas Station', 'gas'), // 3x2 building
+                    new Building(9, 9, 2, 2, COLORS.SCHOOL, 'School', 'school'),
+                    new Building(12, 9, 2, 2, COLORS.PARK_OFFICE, 'Park Office', 'park')
+                ];
+            }
+            
+            setupEventListeners() {
+                canvas.focus();
+                
+                canvas.addEventListener('click', () => canvas.focus());
+                
+                document.addEventListener('keydown', (e) => {
+                    this.keys[e.key] = true;
+                    
+                    // Prevent arrow keys from scrolling the page
+                    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                        e.preventDefault();
+                    }
+                    
+                    if (e.key === ' ' && this.currentScreen !== 'town') {
+                        this.exitBuilding();
+                        e.preventDefault();
+                    }
+                });
+                
+                document.addEventListener('keyup', (e) => {
+                    this.keys[e.key] = false;
+                });
+            }
+            
+            handleInput() {
+                let dx = 0, dy = 0;
+                
+                if (this.keys['ArrowLeft']) dx = -1;
+                if (this.keys['ArrowRight']) dx = 1;
+                if (this.keys['ArrowUp']) dy = -1;
+                if (this.keys['ArrowDown']) dy = 1;
+                
+                this.player.move(dx, dy, this);
+            }
+            
+            canMoveTo(x, y, size) {
+                if (this.currentScreen !== 'town') {
+                    // Inside building - can move anywhere except outside walls (but allow access to exit door)
+                    return x >= 58 && y >= 58 && 
+                           x + size <= SCREEN_WIDTH - 58 && 
+                           y + size <= SCREEN_HEIGHT - 50; // Allow closer to bottom for exit door
+                }
+                
+                // Outside - check valid position
+                return this.isValidPosition(x, y, size);
+            }
+            
+            isValidPosition(x, y, size) {
+                const playerRight = x + size;
+                const playerBottom = y + size;
+                
+                // Check screen bounds
+                if (x < 0 || y < 0 || playerRight > SCREEN_WIDTH || playerBottom > SCREEN_HEIGHT) {
+                    return false;
+                }
+                
+                // Check building collisions
+                for (const building of this.buildings) {
+                    if (x < building.x + building.width &&
+                        playerRight > building.x &&
+                        y < building.y + building.height &&
+                        playerBottom > building.y) {
+                        return false;
+                    }
+                }
+                
+                // Check if player is on roads or driveways (not grass)
+                return this.isOnRoadOrDriveway(x, y, size);
+            }
+            
+            isOnRoadOrDriveway(x, y, size) {
+                const playerRight = x + size;
+                const playerBottom = y + size;
+                
+                // Road dimensions
+                const roadHeight = CELL_HEIGHT * 0.75;
+                const roadVerticalOffset = CELL_HEIGHT * 0.125;
+                const roadWidth = CELL_WIDTH * 0.75;
+                const roadHorizontalOffset = CELL_WIDTH * 0.125;
+                
+                // Check horizontal roads (rows 1, 4, 7)
+                const roadRows = [1, 4, 7];
+                for (const row of roadRows) {
+                    const roadPos = gridToScreen(1, row);
+                    const roadY = roadPos.y + roadVerticalOffset;
+                    
+                    if (y >= roadY && playerBottom <= roadY + roadHeight) {
+                        return true;
+                    }
+                }
+                
+                // Check vertical roads (columns 4, 8, 11)
+                const roadCols = [4, 8, 11];
+                for (const col of roadCols) {
+                    const roadPos = gridToScreen(col, 1);
+                    const roadX = roadPos.x + roadHorizontalOffset;
+                    
+                    if (x >= roadX && playerRight <= roadX + roadWidth) {
+                        return true;
+                    }
+                }
+                
+                // Check driveways
+                for (const building of this.buildings) {
+                    if (x >= building.drivewayX && 
+                        playerRight <= building.drivewayX + building.drivewayWidth &&
+                        y >= building.drivewayY && 
+                        playerBottom <= building.drivewayY + building.drivewayHeight+50) {
+                        return true;
+                    }
+                }
+                
+                return false; // Cannot move on grass
+            }
+            
+            drawTown() {
+                // Draw grass background
+                ctx.fillStyle = COLORS.GRASS;
+                ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+                
+                // Draw horizontal roads on rows 1, 4, and 7 (75% of cell height)
+                ctx.fillStyle = COLORS.ROAD;
+                
+                const roadRows = [1, 4, 7];
+                const roadHeight = CELL_HEIGHT * 0.75;
+                const roadVerticalOffset = CELL_HEIGHT * 0.125; // Center the road in the cell
+                
+                for (const row of roadRows) {
+                    const roadPos = gridToScreen(1, row);
+                    ctx.fillRect(0, roadPos.y + roadVerticalOffset, SCREEN_WIDTH, roadHeight);
+                }
+                
+                // Draw vertical roads on columns 4, 8, and 11 (75% of cell width)
+                const roadCols = [4, 8, 11];
+                const roadWidth = CELL_WIDTH * 0.75;
+                const roadHorizontalOffset = CELL_WIDTH * 0.125; // Center the road in the cell
+                
+                for (const col of roadCols) {
+                    const roadPos = gridToScreen(col, 1);
+                    ctx.fillRect(roadPos.x + roadHorizontalOffset, 0, roadWidth, SCREEN_HEIGHT);
+                }
+                
+                // Draw road markings
+                ctx.fillStyle = COLORS.WHITE;
+                
+                // Horizontal road markings
+                for (const row of roadRows) {
+                    const roadPos = gridToScreen(1, row);
+                    const roadCenterY = roadPos.y + roadVerticalOffset + roadHeight / 2;
+                    
+                    for (let i = 0; i < SCREEN_WIDTH; i += 60) {
+                        ctx.fillRect(i, roadCenterY - 2, 30, 4);
+                    }
+                }
+                
+                // Vertical road markings
+                for (const col of roadCols) {
+                    const roadPos = gridToScreen(col, 1);
+                    const roadCenterX = roadPos.x + roadHorizontalOffset + roadWidth / 2;
+                    
+                    for (let i = 0; i < SCREEN_HEIGHT; i += 60) {
+                        ctx.fillRect(roadCenterX - 2, i, 4, 30);
+                    }
+                }
+                
+                // Draw buildings
+                for (const building of this.buildings) {
+                    building.draw();
+                }
+                
+                // Draw player
+                this.player.draw();
+            }
+            
+            checkBuildingEntry() {
+                for (const building of this.buildings) {
+                    if (building.checkDoorCollision(this.player)) {
+                        this.enterBuilding(building);
+                        return;
+                    }
+                }
+            }
+            
+            enterBuilding(building) {
+                this.currentScreen = 'building';
+                this.currentBuilding = building;
+                // Position player inside building
+                this.player.x = SCREEN_WIDTH / 2 - this.player.size / 2;
+                this.player.y = SCREEN_HEIGHT - 100;
+            }
+            
+            exitBuilding() {
+                if (this.currentBuilding) {
+                    this.currentScreen = 'town';
+                    // Position player on the building's driveway
+                    this.player.x = this.currentBuilding.drivewayX + (this.currentBuilding.drivewayWidth - this.player.size) / 2;
+                    this.player.y = this.currentBuilding.drivewayY + 10;
+                    this.currentBuilding = null;
+                }
+            }
+            
+            checkBuildingExit() {
+                if (this.currentBuilding && this.currentBuilding.checkInteriorExit(this.player)) {
+                    this.exitBuilding();
+                }
+            }
+            
+            update() {
+                this.handleInput();
+                
+                if (this.currentScreen === 'town') {
+                    this.checkBuildingEntry();
+                } else {
+                    this.checkBuildingExit();
+                }
+            }
+            
+            draw() {
+                ctx.clearRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+                
+                if (this.currentScreen === 'town') {
+                    this.drawTown();
+                } else if (this.currentBuilding) {
+                    this.currentBuilding.drawInterior();
+                    this.player.draw();
+                }
+            }
+            
+            gameLoop() {
+                this.update();
+                this.draw();
+                requestAnimationFrame(() => this.gameLoop());
+            }
+        }
+        
+        // Start the game
+        const game = new Game();
+        game.gameLoop();
+    </script>
+</body>
+</html>
