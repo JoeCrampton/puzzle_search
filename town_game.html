@@ -40,7 +40,7 @@
 </head>
 <body>
     <h1>🏘️ Town Explorer</h1>
-    <canvas id="gameCanvas" width="1000" height="700" tabindex="0"></canvas>
+    <canvas id="gameCanvas" width="1000" height="600" tabindex="0"></canvas>
     <div class="instructions">
         <p>Use arrow keys to move • Walk on roads and driveways • Enter buildings through doors • Press SPACE to exit buildings</p>
     </div>
@@ -50,12 +50,15 @@
         const ctx = canvas.getContext('2d');
         
         const SCREEN_WIDTH = 1000;
-        const SCREEN_HEIGHT = 700;
+        const SCREEN_HEIGHT = 600;
+        const SIDEBAR_WIDTH = SCREEN_WIDTH * 0.25; // 25% for left sidebar
+        const GAME_WIDTH = SCREEN_WIDTH * 0.75; // 75% for game area
+        const GAME_OFFSET_X = SIDEBAR_WIDTH; // Game starts after sidebar
         
-        // Grid system: 14 columns × 9 rows
+        // Grid system: 14 columns × 9 rows (now within the 75% game area)
         const GRID_COLS = 14;
         const GRID_ROWS = 9;
-        const CELL_WIDTH = SCREEN_WIDTH / GRID_COLS;  // ~71px per cell
+        const CELL_WIDTH = GAME_WIDTH / GRID_COLS;  // ~53px per cell in game area
         const CELL_HEIGHT = SCREEN_HEIGHT / GRID_ROWS; // ~78px per cell
         
         const DRIVEWAY_WIDTH = 40;
@@ -87,10 +90,10 @@
             PARK_OFFICE: '#4CAF50'
         };
         
-        // Convert grid coordinates (1,1 = bottom left) to screen coordinates
+        // Convert grid coordinates (1,1 = bottom left) to screen coordinates within game area
         function gridToScreen(gridX, gridY) {
             return {
-                x: (gridX - 1) * CELL_WIDTH,
+                x: GAME_OFFSET_X + (gridX - 1) * CELL_WIDTH,
                 y: SCREEN_HEIGHT - (gridY * CELL_HEIGHT)
             };
         }
@@ -277,7 +280,7 @@
                        playerBounds.y + playerBounds.height > this.doorY;
             }
             
-            drawInterior() {
+            drawInterior(game) {
                 // Clear screen with interior color
                 ctx.fillStyle = '#F5F5F5';
                 ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
@@ -299,6 +302,11 @@
                 ctx.textAlign = 'left';
                 ctx.fillText(this.name, SCREEN_WIDTH / 2 - 50, 120);
                 
+                // Draw puzzle piece if not collected
+                if (!game.collectedFromBuildings.has(this.name)) {
+                    this.drawPuzzlePiece();
+                }
+                
                 // Exit door at bottom
                 ctx.fillStyle = COLORS.DOOR;
                 ctx.fillRect((SCREEN_WIDTH - 30) / 2, SCREEN_HEIGHT - 58, 30, 8);
@@ -310,7 +318,50 @@
                 ctx.fillStyle = '#666';
                 ctx.font = '18px Arial';
                 ctx.textAlign = 'center';
-                ctx.fillText('Walk around inside • Walk to door or press SPACE to exit', SCREEN_WIDTH / 2, SCREEN_HEIGHT - 20);
+                if (game.collectedFromBuildings.has(this.name)) {
+                    ctx.fillText('Puzzle piece collected! • Walk to door or press SPACE to exit', SCREEN_WIDTH / 2, SCREEN_HEIGHT - 20);
+                } else {
+                    ctx.fillText('Walk to puzzle piece to collect it • Walk to door or press SPACE to exit', SCREEN_WIDTH / 2, SCREEN_HEIGHT - 20);
+                }
+            }
+            
+            drawPuzzlePiece() {
+                // Draw a puzzle piece in the center of the room
+                const pieceX = SCREEN_WIDTH / 2;
+                const pieceY = SCREEN_HEIGHT / 2;
+                
+                // Puzzle piece background (bright yellow)
+                ctx.fillStyle = '#FFD700';
+                ctx.beginPath();
+                ctx.arc(pieceX, pieceY, 25, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Puzzle piece border
+                ctx.strokeStyle = COLORS.BLACK;
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                
+                // Puzzle piece emoji
+                ctx.font = '30px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillStyle = COLORS.BLACK;
+                ctx.fillText('🧩', pieceX, pieceY + 8);
+            }
+            
+            checkPuzzlePieceCollection(player, game) {
+                // Check if player is near the puzzle piece
+                if (game.collectedFromBuildings.has(this.name)) return false;
+                
+                const playerBounds = player.getBounds();
+                const pieceX = SCREEN_WIDTH / 2;
+                const pieceY = SCREEN_HEIGHT / 2;
+                
+                const distance = Math.sqrt(
+                    Math.pow(playerBounds.x + playerBounds.width/2 - pieceX, 2) +
+                    Math.pow(playerBounds.y + playerBounds.height/2 - pieceY, 2)
+                );
+                
+                return distance < 35; // Close enough to collect
             }
             
             checkInteriorExit(player) {
@@ -335,6 +386,12 @@
                 this.currentBuilding = null;
                 this.keys = {};
                 this.buildings = this.createBuildings();
+                
+                // Puzzle system
+                this.totalPuzzlePieces = this.buildings.length; // One piece per building
+                this.collectedPieces = 0;
+                this.collectedFromBuildings = new Set(); // Track which buildings we've collected from
+                
                 this.setupEventListeners();
             }
             
@@ -363,7 +420,10 @@
             setupEventListeners() {
                 canvas.focus();
                 
-                canvas.addEventListener('click', () => canvas.focus());
+                canvas.addEventListener('click', (e) => {
+                    canvas.focus();
+                    this.handleClick(e);
+                });
                 
                 document.addEventListener('keydown', (e) => {
                     this.keys[e.key] = true;
@@ -382,6 +442,35 @@
                 document.addEventListener('keyup', (e) => {
                     this.keys[e.key] = false;
                 });
+            }
+            
+            handleClick(e) {
+                if (this.currentScreen === 'puzzle') {
+                    const rect = canvas.getBoundingClientRect();
+                    const clickX = e.clientX - rect.left;
+                    const clickY = e.clientY - rect.top;
+                    
+                    // Check if click is within restart button bounds
+                    if (clickX >= this.restartButtonX && 
+                        clickX <= this.restartButtonX + this.restartButtonWidth &&
+                        clickY >= this.restartButtonY && 
+                        clickY <= this.restartButtonY + this.restartButtonHeight) {
+                        this.restartGame();
+                    }
+                }
+            }
+            
+            restartGame() {
+                // Reset all game state
+                this.collectedPieces = 0;
+                this.collectedFromBuildings.clear();
+                this.currentScreen = 'town';
+                this.currentBuilding = null;
+                
+                // Reset player position to starting location
+                const startPos = gridToScreen(7, 4);
+                this.player.x = startPos.x + 30;
+                this.player.y = startPos.y + 30;
             }
             
             handleInput() {
@@ -411,8 +500,8 @@
                 const playerRight = x + size;
                 const playerBottom = y + size;
                 
-                // Check screen bounds
-                if (x < 0 || y < 0 || playerRight > SCREEN_WIDTH || playerBottom > SCREEN_HEIGHT) {
+                // Check game area bounds (not sidebar)
+                if (x < GAME_OFFSET_X || y < 0 || playerRight > SCREEN_WIDTH || playerBottom > SCREEN_HEIGHT) {
                     return false;
                 }
                 
@@ -476,9 +565,21 @@
             }
             
             drawTown() {
-                // Draw grass background
+                // Draw sidebar background
+                ctx.fillStyle = '#2c3e50';
+                ctx.fillRect(0, 0, SIDEBAR_WIDTH, SCREEN_HEIGHT);
+                
+                // Draw sidebar border
+                ctx.strokeStyle = '#34495e';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(SIDEBAR_WIDTH, 0);
+                ctx.lineTo(SIDEBAR_WIDTH, SCREEN_HEIGHT);
+                ctx.stroke();
+                
+                // Draw grass background for game area
                 ctx.fillStyle = COLORS.GRASS;
-                ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+                ctx.fillRect(GAME_OFFSET_X, 0, GAME_WIDTH, SCREEN_HEIGHT);
                 
                 // Draw horizontal roads on rows 1, 4, and 7 (75% of cell height)
                 ctx.fillStyle = COLORS.ROAD;
@@ -489,7 +590,7 @@
                 
                 for (const row of roadRows) {
                     const roadPos = gridToScreen(1, row);
-                    ctx.fillRect(0, roadPos.y + roadVerticalOffset, SCREEN_WIDTH, roadHeight);
+                    ctx.fillRect(GAME_OFFSET_X, roadPos.y + roadVerticalOffset, GAME_WIDTH, roadHeight);
                 }
                 
                 // Draw vertical roads on columns 4, 8, and 11 (75% of cell width)
@@ -510,7 +611,7 @@
                     const roadPos = gridToScreen(1, row);
                     const roadCenterY = roadPos.y + roadVerticalOffset + roadHeight / 2;
                     
-                    for (let i = 0; i < SCREEN_WIDTH; i += 60) {
+                    for (let i = GAME_OFFSET_X; i < SCREEN_WIDTH; i += 60) {
                         ctx.fillRect(i, roadCenterY - 2, 30, 4);
                     }
                 }
@@ -532,6 +633,9 @@
                 
                 // Draw player
                 this.player.draw();
+                
+                // Draw inventory UI
+                this.drawInventory();
             }
             
             checkBuildingEntry() {
@@ -567,6 +671,81 @@
                 }
             }
             
+            checkPuzzlePieceCollection() {
+                if (this.currentBuilding && this.currentBuilding.checkPuzzlePieceCollection(this.player, this)) {
+                    if (!this.collectedFromBuildings.has(this.currentBuilding.name)) {
+                        this.collectedFromBuildings.add(this.currentBuilding.name);
+                        this.collectedPieces++;
+                    }
+                }
+            }
+            
+            drawInventory() {
+                // Sidebar title
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.font = 'bold 20px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Inventory', SIDEBAR_WIDTH / 2, 40);
+                
+                // Puzzle piece section
+                const sectionY = 80;
+                
+                // Section background
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+                ctx.fillRect(10, sectionY, SIDEBAR_WIDTH - 20, 120);
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(10, sectionY, SIDEBAR_WIDTH - 20, 120);
+                
+                // Puzzle piece icon (larger)
+                ctx.font = '36px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('🧩', SIDEBAR_WIDTH / 2, sectionY + 45);
+                
+                // Collection count (prominent)
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.font = 'bold 24px Arial';
+                ctx.fillText(`${this.collectedPieces}`, SIDEBAR_WIDTH / 2, sectionY + 75);
+                
+                // Separator line
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(SIDEBAR_WIDTH / 2 - 15, sectionY + 80);
+                ctx.lineTo(SIDEBAR_WIDTH / 2 + 15, sectionY + 80);
+                ctx.stroke();
+                
+                // Total count
+                ctx.font = 'bold 18px Arial';
+                ctx.fillStyle = '#BBB';
+                ctx.fillText(`${this.totalPuzzlePieces}`, SIDEBAR_WIDTH / 2, sectionY + 95);
+                
+                // Label
+                ctx.font = '14px Arial';
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.fillText('Puzzle Pieces', SIDEBAR_WIDTH / 2, sectionY + 115);
+                
+                // Progress bar
+                const progressY = sectionY + 130;
+                const progressWidth = SIDEBAR_WIDTH - 40;
+                const progressHeight = 8;
+                const progressX = 20;
+                
+                // Progress background
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                ctx.fillRect(progressX, progressY, progressWidth, progressHeight);
+                
+                // Progress fill
+                const progressPercent = this.collectedPieces / this.totalPuzzlePieces;
+                ctx.fillStyle = '#4CAF50';
+                ctx.fillRect(progressX, progressY, progressWidth * progressPercent, progressHeight);
+                
+                // Progress border
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(progressX, progressY, progressWidth, progressHeight);
+            }
+            
             update() {
                 this.handleInput();
                 
@@ -574,6 +753,12 @@
                     this.checkBuildingEntry();
                 } else {
                     this.checkBuildingExit();
+                    this.checkPuzzlePieceCollection();
+                    
+                    // Check if all puzzle pieces collected
+                    if (this.collectedPieces >= this.totalPuzzlePieces) {
+                        this.currentScreen = 'puzzle';
+                    }
                 }
             }
             
@@ -582,10 +767,79 @@
                 
                 if (this.currentScreen === 'town') {
                     this.drawTown();
+                } else if (this.currentScreen === 'puzzle') {
+                    this.drawPuzzleScreen();
                 } else if (this.currentBuilding) {
-                    this.currentBuilding.drawInterior();
+                    this.currentBuilding.drawInterior(this);
                     this.player.draw();
                 }
+            }
+            
+            drawPuzzleScreen() {
+                // Clear screen with puzzle background
+                ctx.fillStyle = '#1a1a2e';
+                ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+                
+                // Title
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.font = 'bold 48px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('🎉 Puzzle Complete! 🎉', SCREEN_WIDTH / 2, 150);
+                
+                // Congratulations message
+                ctx.font = '24px Arial';
+                ctx.fillText('You collected all the puzzle pieces!', SCREEN_WIDTH / 2, 200);
+                
+                // Show collected pieces as a grid
+                const pieceSize = 60;
+                const startX = SCREEN_WIDTH / 2 - (4 * pieceSize) / 2;
+                const startY = 250;
+                
+                let pieceIndex = 0;
+                for (let row = 0; row < 3; row++) {
+                    for (let col = 0; col < 4; col++) {
+                        if (pieceIndex < this.collectedPieces) {
+                            const x = startX + col * pieceSize;
+                            const y = startY + row * pieceSize;
+                            
+                            // Draw puzzle piece
+                            ctx.fillStyle = '#FFD700';
+                            ctx.fillRect(x, y, pieceSize - 5, pieceSize - 5);
+                            ctx.strokeStyle = COLORS.BLACK;
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(x, y, pieceSize - 5, pieceSize - 5);
+                            
+                            // Puzzle piece emoji
+                            ctx.font = '30px Arial';
+                            ctx.fillText('🧩', x + pieceSize/2, y + pieceSize/2 + 8);
+                        }
+                        pieceIndex++;
+                    }
+                }
+                
+                // Play Again Button
+                this.restartButtonX = SCREEN_WIDTH / 2 - 100;
+                this.restartButtonY = 520;
+                this.restartButtonWidth = 200;
+                this.restartButtonHeight = 50;
+                
+                // Button background
+                ctx.fillStyle = '#4CAF50';
+                ctx.fillRect(this.restartButtonX, this.restartButtonY, this.restartButtonWidth, this.restartButtonHeight);
+                ctx.strokeStyle = COLORS.WHITE;
+                ctx.lineWidth = 3;
+                ctx.strokeRect(this.restartButtonX, this.restartButtonY, this.restartButtonWidth, this.restartButtonHeight);
+                
+                // Button text
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.font = 'bold 20px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('🔄 Play Again', SCREEN_WIDTH / 2, this.restartButtonY + 32);
+                
+                // Thank you message
+                ctx.fillStyle = '#BBB';
+                ctx.font = '18px Arial';
+                ctx.fillText('Thank you for playing Town Explorer!', SCREEN_WIDTH / 2, 600);
             }
             
             gameLoop() {
