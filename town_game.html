@@ -304,7 +304,7 @@
                 
                 // Draw puzzle piece if this building has one and it's not collected
                 if (game.buildingsWithPieces.has(this.name) && !game.collectedFromBuildings.has(this.name)) {
-                    this.drawPuzzlePiece(game.buildingToPiece[this.name], game);
+                    this.drawMathProblem(game);
                 }
                 
                 // Exit door at bottom
@@ -321,84 +321,121 @@
                 if (game.collectedFromBuildings.has(this.name)) {
                     ctx.fillText('Puzzle piece collected! • Walk to door or press SPACE to exit', SCREEN_WIDTH / 2, SCREEN_HEIGHT - 20);
                 } else if (game.buildingsWithPieces.has(this.name)) {
-                    ctx.fillText('Walk to puzzle piece to collect it • Walk to door or press SPACE to exit', SCREEN_WIDTH / 2, SCREEN_HEIGHT - 20);
+                    if (game.currentMathAnswer !== null) {
+                        ctx.fillText('Type your answer and press ENTER • Press SPACE to exit', SCREEN_WIDTH / 2, SCREEN_HEIGHT - 20);
+                    } else {
+                        ctx.fillText('Solve the math problem to get the puzzle piece • Press SPACE to exit', SCREEN_WIDTH / 2, SCREEN_HEIGHT - 20);
+                    }
                 } else {
                     ctx.fillText('No puzzle piece here • Walk to door or press SPACE to exit', SCREEN_WIDTH / 2, SCREEN_HEIGHT - 20);
                 }
             }
             
-            drawPuzzlePiece(pieceNumber, game) {
-                // Draw a puzzle piece in the center of the room
-                const pieceX = SCREEN_WIDTH / 2;
-                const pieceY = SCREEN_HEIGHT / 2;
-                const pieceSize = 80;
+            drawMathProblem(game) {
+                const problemX = SCREEN_WIDTH / 2;
+                const problemY = SCREEN_HEIGHT / 2 + 100; // Move down 100px
+                
+                // Get the math problem for this building
+                const problem = game.mathProblems[this.name];
+                const pieceNumber = game.buildingToPiece[this.name];
+                
+                // Draw puzzle piece prize above the problem
+                const pieceY = problemY - 180;
+                const pieceSize = 60;
                 
                 if (game.imageLoaded) {
                     // Calculate source coordinates for this piece (2x4 grid)
                     const col = pieceNumber % 4;
                     const row = Math.floor(pieceNumber / 4);
                     
-                    const sourceWidth = game.unicornImage.width / 4;
-                    const sourceHeight = game.unicornImage.height / 2;
+                    const sourceWidth = game.puzzleImage.width / 4;
+                    const sourceHeight = game.puzzleImage.height / 2;
                     const sourceX = col * sourceWidth;
                     const sourceY = row * sourceHeight;
                     
                     // Draw the image piece
                     ctx.drawImage(
-                        game.unicornImage,
+                        game.puzzleImage,
                         sourceX, sourceY, sourceWidth, sourceHeight,
-                        pieceX - pieceSize/2, pieceY - pieceSize/2, pieceSize, pieceSize
+                        problemX - pieceSize/2, pieceY - pieceSize/2, pieceSize, pieceSize
                     );
                     
                     // Add puzzle piece border
                     ctx.strokeStyle = '#FFD700';
-                    ctx.lineWidth = 4;
-                    ctx.strokeRect(pieceX - pieceSize/2, pieceY - pieceSize/2, pieceSize, pieceSize);
-                    
-                    // Inner black border for definition
-                    ctx.strokeStyle = COLORS.BLACK;
-                    ctx.lineWidth = 2;
-                    ctx.strokeRect(pieceX - pieceSize/2, pieceY - pieceSize/2, pieceSize, pieceSize);
-                } else {
-                    // Fallback: draw colored square with piece number
-                    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F'];
-                    
-                    ctx.fillStyle = colors[pieceNumber % colors.length];
-                    ctx.fillRect(pieceX - pieceSize/2, pieceY - pieceSize/2, pieceSize, pieceSize);
-                    ctx.strokeStyle = COLORS.BLACK;
                     ctx.lineWidth = 3;
-                    ctx.strokeRect(pieceX - pieceSize/2, pieceY - pieceSize/2, pieceSize, pieceSize);
+                    ctx.strokeRect(problemX - pieceSize/2, pieceY - pieceSize/2, pieceSize, pieceSize);
                 }
                 
-                // Piece number label
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-                ctx.fillRect(pieceX - 15, pieceY + pieceSize/2 - 15, 30, 20);
-                ctx.strokeStyle = COLORS.BLACK;
-                ctx.lineWidth = 1;
-                ctx.strokeRect(pieceX - 15, pieceY + pieceSize/2 - 15, 30, 20);
-                
-                ctx.font = 'bold 14px Arial';
-                ctx.textAlign = 'center';
+                // Prize label
                 ctx.fillStyle = COLORS.BLACK;
-                ctx.fillText(`${pieceNumber + 1}`, pieceX, pieceY + pieceSize/2 - 2);
+                ctx.font = 'bold 16px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(`Puzzle Piece #${pieceNumber + 1}`, problemX, pieceY + pieceSize/2 + 20);
+                
+                // Problem background
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+                ctx.fillRect(problemX - 250, problemY - 100, 500, 140);
+                ctx.strokeStyle = COLORS.BLACK;
+                ctx.lineWidth = 3;
+                ctx.strokeRect(problemX - 250, problemY - 100, 500, 140);
+                
+                // Math problem text
+                ctx.fillStyle = COLORS.BLACK;
+                ctx.font = '18px Arial';
+                ctx.textAlign = 'center';
+                
+                // Word wrap the question
+                const words = problem.question.split(' ');
+                let line = '';
+                let y = problemY - 60;
+                
+                for (let i = 0; i < words.length; i++) {
+                    const testLine = line + words[i] + ' ';
+                    const metrics = ctx.measureText(testLine);
+                    if (metrics.width > 460 && i > 0) {
+                        ctx.fillText(line, problemX, y);
+                        line = words[i] + ' ';
+                        y += 25;
+                    } else {
+                        line = testLine;
+                    }
+                }
+                ctx.fillText(line, problemX, y);
+                
+                // Answer input box
+                const inputX = problemX - 60;
+                const inputY = problemY + 10;
+                const inputWidth = 120;
+                const inputHeight = 30;
+                
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.fillRect(inputX, inputY, inputWidth, inputHeight);
+                ctx.strokeStyle = '#2196F3';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(inputX, inputY, inputWidth, inputHeight);
+                
+                // Answer label
+                ctx.fillStyle = COLORS.BLACK;
+                ctx.font = 'bold 16px Arial';
+                ctx.fillText('Answer:', problemX - 100, inputY + 20);
+                
+                // Display current answer
+                ctx.font = 'bold 18px Arial';
+                ctx.fillStyle = COLORS.BLACK;
+                const displayAnswer = game.currentMathAnswer !== null ? game.currentMathAnswer.toString() : '';
+                ctx.fillText(displayAnswer, problemX, inputY + 20);
+                
+                // Feedback for wrong answers
+                if (game.mathFeedback) {
+                    ctx.fillStyle = game.mathFeedback.includes('Correct') ? '#4CAF50' : '#F44336';
+                    ctx.font = 'bold 16px Arial';
+                    ctx.fillText(game.mathFeedback, problemX, problemY + 70);
+                }
             }
             
             checkPuzzlePieceCollection(player, game) {
-                // Check if this building has a puzzle piece and it's not collected
-                if (!game.buildingsWithPieces.has(this.name) || game.collectedFromBuildings.has(this.name)) {
-                    return false;
-                }
-                
-                const playerBounds = player.getBounds();
-                const pieceX = SCREEN_WIDTH / 2;
-                const pieceY = SCREEN_HEIGHT / 2;
-                
-                const distance = Math.sqrt(
-                    Math.pow(playerBounds.x + playerBounds.width/2 - pieceX, 2) +
-                    Math.pow(playerBounds.y + playerBounds.height/2 - pieceY, 2)
-                );
-                
-                return distance < 35; // Close enough to collect
+                // This is now handled by math problem solving
+                return false;
             }
             
             checkInteriorExit(player) {
@@ -429,23 +466,51 @@
                 this.collectedPieces = 0;
                 this.collectedFromBuildings = new Set(); // Track which buildings we've collected from
                 
-                // Load unicorn image
-                this.unicornImage = new Image();
-                this.unicornImage.src = 'vecteezy_unicorn-strolling-on-the-beach-cartoon-clipart_6823393.jpg';
+                // Randomly choose between unicorn and cat
+                this.puzzleType = Math.random() < 0.5 ? 'unicorn' : 'cat';
+                this.puzzleImage = new Image();
+                
+                if (this.puzzleType === 'unicorn') {
+                    this.puzzleImage.src = 'vecteezy_unicorn-strolling-on-the-beach-cartoon-clipart_6823393.jpg';
+                    this.puzzleName = 'Unicorn';
+                    this.puzzleEmoji = '🦄';
+                } else {
+                    this.puzzleImage.src = 'vecteezy_cartoon-cute-cat-isolated-on-white-background_.jpg';
+                    this.puzzleName = 'Cat';
+                    this.puzzleEmoji = '🐱';
+                }
+                
                 this.imageLoaded = false;
                 
-                this.unicornImage.onload = () => {
+                this.puzzleImage.onload = () => {
                     this.imageLoaded = true;
-                    console.log('Unicorn image loaded successfully');
+                    console.log(`${this.puzzleName} image loaded successfully`);
                 };
                 
-                this.unicornImage.onerror = () => {
-                    console.error('Failed to load unicorn image');
+                this.puzzleImage.onerror = () => {
+                    console.error(`Failed to load ${this.puzzleName} image`);
                     this.imageLoaded = false;
                 };
                 
                 // Randomly assign 8 puzzle pieces to buildings
                 this.assignPuzzlePieces();
+                
+                // Generate random math problems for each building
+                this.generateMathProblems();
+                
+                // Math problem state
+                this.currentMathAnswer = null;
+                this.mathFeedback = '';
+                
+                // Celebration animation state
+                this.showCelebration = false;
+                this.celebrationStartTime = 0;
+                this.celebrationPieceNumber = 0;
+                
+                // Audio context for sound effects
+                this.audioContext = null;
+                this.puzzleCompletedMusicPlayed = false; // Flag to prevent repeated music
+                this.initAudio();
                 
                 this.setupEventListeners();
             }
@@ -453,22 +518,22 @@
             createBuildings() {
                 return [
                     // Bottom row buildings (rows 2-3)
-                    new Building(2, 3, 2, 2, COLORS.FIRE_STATION, 'Fire Station', 'fire'),
-                    new Building(5, 3, 2, 2, COLORS.POLICE, 'Police Station', 'police'),
+                    new Building(1.5, 3, 2, 2, COLORS.FIRE_STATION, 'Fire Station', 'fire'),
+                    new Building(5.5, 3, 2, 2, COLORS.POLICE, 'Police Station', 'police'),
                     new Building(9, 3, 2, 2, COLORS.GROCERY, 'Grocery Store', 'grocery'),
-                    new Building(12, 3, 2, 2, COLORS.BANK, 'Bank', 'bank'),
+                    new Building(12.5, 3, 2, 2, COLORS.BANK, 'Bank', 'bank'),
                     
                     // Middle row buildings (rows 5-6)
-                    new Building(2, 6, 2, 2, COLORS.RESTAURANT, 'Restaurant', 'restaurant'),
+                    new Building(1.5, 6, 2, 2, COLORS.RESTAURANT, 'Restaurant', 'restaurant'),
                     new Building(5, 6, 3, 2, COLORS.MUSEUM, 'Museum', 'museum'), // 3x2 building
                     new Building(9, 6, 2, 2, COLORS.POST_OFFICE, 'Post Office', 'post'),
-                    new Building(12, 6, 2, 2, COLORS.LIBRARY, 'Library', 'library'),
+                    new Building(12.5, 6, 2, 2, COLORS.LIBRARY, 'Library', 'library'),
                     
                     // Top row buildings (rows 8-9)
-                    new Building(2, 9, 2, 2, COLORS.HOSPITAL, 'Hospital', 'hospital'),
+                    new Building(1.5, 9, 2, 2, COLORS.HOSPITAL, 'Hospital', 'hospital'),
                     new Building(5, 9, 3, 2, COLORS.GAS_STATION, 'Gas Station', 'gas'), // 3x2 building
                     new Building(9, 9, 2, 2, COLORS.SCHOOL, 'School', 'school'),
-                    new Building(12, 9, 2, 2, COLORS.PARK_OFFICE, 'Park Office', 'park')
+                    new Building(12.5, 9, 2, 2, COLORS.PARK_OFFICE, 'Park Office', 'park')
                 ];
             }
             
@@ -485,6 +550,189 @@
                 shuffled.slice(0, 8).forEach((buildingName, index) => {
                     this.buildingToPiece[buildingName] = index;
                 });
+                
+                // Generate new math problems
+                this.generateMathProblems();
+            }
+            
+            generateMathProblems() {
+                // Template for each building type with thematic context
+                const problemTemplates = {
+                    'Fire Station': {
+                        addition: (a, b) => `The fire station has ${a} firefighters on duty and ${b} more arrive for backup. How many firefighters are there in total?`,
+                        subtraction: (a, b) => `The fire truck carries ${a} hoses. If firefighters use ${b} hoses to fight a fire, how many hoses are left?`
+                    },
+                    'Police Station': {
+                        addition: (a, b) => `Officer Johnson patrols ${a} blocks in the morning and ${b} blocks in the afternoon. How many blocks did he patrol in total?`,
+                        subtraction: (a, b) => `The police station has ${a} patrol cars. If ${b} cars are out on patrol, how many cars are at the station?`
+                    },
+                    'Hospital': {
+                        addition: (a, b) => `Dr. Smith sees ${a} patients on Monday and ${b} patients on Tuesday. How many patients did she see in total?`,
+                        subtraction: (a, b) => `The hospital has ${a} beds. If ${b} beds are occupied, how many beds are available?`
+                    },
+                    'School': {
+                        addition: (a, b) => `The school has ${a} students in grade 3 and ${b} students in grade 4. How many students are there in both grades?`,
+                        subtraction: (a, b) => `There are ${a} students in Ms. Garcia's class. If ${b} students are absent today, how many students are present?`
+                    },
+                    'Library': {
+                        addition: (a, b) => `The library receives ${a} new books on Monday and ${b} more books on Tuesday. How many new books did they receive in total?`,
+                        subtraction: (a, b) => `The library has ${a} books to shelve. If librarians shelve ${b} books, how many books are left to shelve?`
+                    },
+                    'Restaurant': {
+                        addition: (a, b) => `Chef Carlos makes ${a} sandwiches for lunch and ${b} sandwiches for dinner. How many sandwiches did he make in total?`,
+                        subtraction: (a, b) => `The restaurant prepares ${a} meals for the day. If customers order ${b} meals, how many meals are left?`
+                    },
+                    'Bank': {
+                        addition: (a, b) => `Emma saves $${a} in January and $${b} in February. How much money did she save in total?`,
+                        subtraction: (a, b) => `Tom has $${a} in his account. If he withdraws $${b}, how much money is left in his account?`
+                    },
+                    'Museum': {
+                        addition: (a, b) => `The museum adds ${a} new artifacts on Monday and ${b} more on Wednesday. How many new artifacts were added in total?`,
+                        subtraction: (a, b) => `The museum displays ${a} paintings. If ${b} paintings are moved to storage, how many paintings are still on display?`
+                    },
+                    'Post Office': {
+                        addition: (a, b) => `The mail carrier delivers ${a} packages in the morning and ${b} packages in the afternoon. How many packages were delivered in total?`,
+                        subtraction: (a, b) => `The post office has ${a} letters to deliver. If the mail carrier delivers ${b} letters, how many letters are left?`
+                    },
+                    'Grocery Store': {
+                        addition: (a, b) => `The store receives ${a} boxes of cereal on Monday and ${b} boxes on Thursday. How many boxes did they receive in total?`,
+                        subtraction: (a, b) => `The store has ${a} oranges. If customers buy ${b} oranges, how many oranges are left?`
+                    },
+                    'Gas Station': {
+                        addition: (a, b) => `The gas station sells ${a} gallons of gas in the morning and ${b} gallons in the evening. How many gallons were sold in total?`,
+                        subtraction: (a, b) => `The gas station has ${a} gallons of gas. If they sell ${b} gallons, how many gallons are left?`
+                    },
+                    'Park Office': {
+                        addition: (a, b) => `The park plants ${a} trees on Monday and ${b} trees on Friday. How many trees were planted in total?`,
+                        subtraction: (a, b) => `The park has ${a} picnic tables. If ${b} tables are being repaired, how many tables are available for visitors?`
+                    }
+                };
+                
+                this.mathProblems = {};
+                
+                // Generate random problems for each building
+                for (const buildingName of Object.keys(problemTemplates)) {
+                    const template = problemTemplates[buildingName];
+                    const isAddition = Math.random() < 0.5;
+                    
+                    let num1, num2, answer, question;
+                    
+                    if (isAddition) {
+                        // Addition problems: numbers 1-50
+                        num1 = Math.floor(Math.random() * 50) + 1;
+                        num2 = Math.floor(Math.random() * 50) + 1;
+                        answer = num1 + num2;
+                        question = template.addition(num1, num2);
+                    } else {
+                        // Subtraction problems: ensure positive result
+                        num1 = Math.floor(Math.random() * 70) + 20; // 20-89
+                        num2 = Math.floor(Math.random() * num1) + 1; // 1 to num1
+                        answer = num1 - num2;
+                        question = template.subtraction(num1, num2);
+                    }
+                    
+                    this.mathProblems[buildingName] = {
+                        question: question,
+                        answer: answer
+                    };
+                }
+            }
+            
+            initAudio() {
+                try {
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                } catch (e) {
+                    console.log('Web Audio API not supported');
+                    this.audioContext = null;
+                }
+            }
+            
+            playPieceCollectedChime() {
+                if (!this.audioContext) {
+                    console.log('No audio context available');
+                    return;
+                }
+                
+                console.log('Playing piece collected chime, audio context state:', this.audioContext.state);
+                
+                // Resume audio context if suspended (required by browser policies)
+                if (this.audioContext.state === 'suspended') {
+                    this.audioContext.resume();
+                }
+                
+                const now = this.audioContext.currentTime;
+                
+                // Create a short, pleasant chime sound
+                const oscillator = this.audioContext.createOscillator();
+                const gainNode = this.audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(this.audioContext.destination);
+                
+                // Sweet chime notes: C5 -> E5 -> G5
+                const frequencies = [523.25, 659.25, 783.99];
+                
+                frequencies.forEach((freq, index) => {
+                    const osc = this.audioContext.createOscillator();
+                    const gain = this.audioContext.createGain();
+                    
+                    osc.connect(gain);
+                    gain.connect(this.audioContext.destination);
+                    
+                    osc.frequency.setValueAtTime(freq, now + index * 0.2);
+                    osc.type = 'sine';
+                    
+                    // Envelope: quick attack, gentle decay
+                    gain.gain.setValueAtTime(0, now + index * 0.2);
+                    gain.gain.linearRampToValueAtTime(0.3, now + index * 0.2 + 0.05);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + index * 0.2 + 0.4);
+                    
+                    osc.start(now + index * 0.2);
+                    osc.stop(now + index * 0.2 + 0.4);
+                });
+            }
+            
+            playPuzzleCompletedMusic() {
+                if (!this.audioContext) {
+                    console.log('No audio context available for victory music');
+                    return;
+                }
+                
+                console.log('Playing puzzle completed music, audio context state:', this.audioContext.state);
+                
+                // Resume audio context if suspended
+                if (this.audioContext.state === 'suspended') {
+                    this.audioContext.resume();
+                }
+                
+                const now = this.audioContext.currentTime;
+                
+                // Shorter victory melody: C4-E4-G4-C5 (simple "Ta-da!")
+                const melody = [
+                    { freq: 261.63, time: 0.0, duration: 0.2 },   // C4
+                    { freq: 329.63, time: 0.2, duration: 0.2 },   // E4
+                    { freq: 392.00, time: 0.4, duration: 0.2 },   // G4
+                    { freq: 523.25, time: 0.6, duration: 0.4 }    // C5 (final note)
+                ];
+                
+                melody.forEach(note => {
+                    const osc = this.audioContext.createOscillator();
+                    const gain = this.audioContext.createGain();
+                    
+                    osc.connect(gain);
+                    gain.connect(this.audioContext.destination);
+                    
+                    osc.frequency.setValueAtTime(note.freq, now + note.time);
+                    osc.type = 'triangle';
+                    
+                    // Simpler envelope that fades out properly
+                    gain.gain.setValueAtTime(0, now + note.time);
+                    gain.gain.linearRampToValueAtTime(0.2, now + note.time + 0.05);
+                    gain.gain.linearRampToValueAtTime(0, now + note.time + note.duration);
+                    
+                    osc.start(now + note.time);
+                    osc.stop(now + note.time + note.duration + 1); // Stop slightly after fade
+                });
             }
             
             setupEventListeners() {
@@ -493,10 +741,20 @@
                 canvas.addEventListener('click', (e) => {
                     canvas.focus();
                     this.handleClick(e);
+                    
+                    // Initialize audio on first user interaction
+                    if (this.audioContext && this.audioContext.state === 'suspended') {
+                        this.audioContext.resume();
+                    }
                 });
                 
                 document.addEventListener('keydown', (e) => {
                     this.keys[e.key] = true;
+                    
+                    // Initialize audio on first user interaction
+                    if (this.audioContext && this.audioContext.state === 'suspended') {
+                        this.audioContext.resume();
+                    }
                     
                     // Prevent arrow keys from scrolling the page
                     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
@@ -505,6 +763,51 @@
                     
                     if (e.key === ' ' && this.currentScreen !== 'town') {
                         this.exitBuilding();
+                        e.preventDefault();
+                    }
+                    
+                    // Handle math input when in a building with a puzzle piece
+                    if (this.currentScreen === 'building' && this.currentBuilding && 
+                        this.buildingsWithPieces.has(this.currentBuilding.name) && 
+                        !this.collectedFromBuildings.has(this.currentBuilding.name)) {
+                        
+                        if (e.key >= '0' && e.key <= '9') {
+                            // Number input
+                            if (this.currentMathAnswer === null) {
+                                this.currentMathAnswer = parseInt(e.key);
+                            } else {
+                                this.currentMathAnswer = this.currentMathAnswer * 10 + parseInt(e.key);
+                            }
+                            this.mathFeedback = '';
+                            e.preventDefault();
+                        } else if (e.key === 'Backspace') {
+                            // Delete last digit
+                            if (this.currentMathAnswer !== null) {
+                                this.currentMathAnswer = Math.floor(this.currentMathAnswer / 10);
+                                if (this.currentMathAnswer === 0) {
+                                    this.currentMathAnswer = null;
+                                }
+                            }
+                            this.mathFeedback = '';
+                            e.preventDefault();
+                        } else if (e.key === 'Enter' && this.currentMathAnswer !== null) {
+                            // Check answer
+                            this.checkMathAnswer();
+                            e.preventDefault();
+                        }
+                    }
+                    
+                    // Temporary testing: Press 'C' to complete puzzle instantly
+                    if (e.key === 'c' || e.key === 'C') {
+                        this.collectedPieces = this.totalPuzzlePieces;
+                        // Mark all buildings as collected
+                        for (const buildingName of Object.keys(this.buildingToPiece)) {
+                            this.collectedFromBuildings.add(buildingName);
+                        }
+                        // Trigger completion sequence
+                        this.currentScreen = 'puzzle';
+                        this.playPuzzleCompletedMusic();
+                        console.log('Puzzle completed via cheat key!');
                         e.preventDefault();
                     }
                 });
@@ -530,12 +833,128 @@
                 }
             }
             
+            checkMathAnswer() {
+                const correctAnswer = this.mathProblems[this.currentBuilding.name].answer;
+                
+                if (this.currentMathAnswer === correctAnswer) {
+                    this.mathFeedback = 'Correct! You got the puzzle piece!';
+                    
+                    // Play celebration chime
+                    this.playPieceCollectedChime();
+                    
+                    // Start celebration animation
+                    this.showCelebration = true;
+                    this.celebrationStartTime = Date.now();
+                    this.celebrationPieceNumber = this.buildingToPiece[this.currentBuilding.name];
+                    
+                    // Award the puzzle piece
+                    this.collectedFromBuildings.add(this.currentBuilding.name);
+                    this.collectedPieces++;
+                    
+                    // Clear math state and celebration after animation
+                    setTimeout(() => {
+                        this.currentMathAnswer = null;
+                        this.mathFeedback = '';
+                        this.showCelebration = false;
+                    }, 3000);
+                } else {
+                    this.mathFeedback = `Try again! The answer is not ${this.currentMathAnswer}.`;
+                    this.currentMathAnswer = null;
+                }
+            }
+            
+            drawCelebration() {
+                if (!this.showCelebration || !this.imageLoaded) return;
+                
+                const elapsed = Date.now() - this.celebrationStartTime;
+                const duration = 3000; // 3 seconds
+                const progress = Math.min(elapsed / duration, 1);
+                
+                // Semi-transparent overlay
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+                
+                // Celebration text
+                ctx.fillStyle = '#FFD700';
+                ctx.font = 'bold 48px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('🎉 Great Job! 🎉', SCREEN_WIDTH / 2, 150);
+                
+                // Animated puzzle piece
+                const centerX = SCREEN_WIDTH / 2;
+                const centerY = SCREEN_HEIGHT / 2;
+                
+                // Bounce and scale animation
+                const bounceHeight = Math.sin(progress * Math.PI * 4) * 20 * (1 - progress);
+                const scale = 0.5 + Math.sin(progress * Math.PI * 2) * 0.3;
+                const rotation = progress * Math.PI * 4;
+                
+                const pieceSize = 120 * scale;
+                const pieceY = centerY + bounceHeight;
+                
+                // Save canvas state for transformation
+                ctx.save();
+                ctx.translate(centerX, pieceY);
+                ctx.rotate(rotation);
+                
+                // Draw the puzzle piece
+                const col = this.celebrationPieceNumber % 4;
+                const row = Math.floor(this.celebrationPieceNumber / 4);
+                
+                const sourceWidth = this.puzzleImage.width / 4;
+                const sourceHeight = this.puzzleImage.height / 2;
+                const sourceX = col * sourceWidth;
+                const sourceY = row * sourceHeight;
+                
+                ctx.drawImage(
+                    this.puzzleImage,
+                    sourceX, sourceY, sourceWidth, sourceHeight,
+                    -pieceSize/2, -pieceSize/2, pieceSize, pieceSize
+                );
+                
+                // Sparkle border
+                ctx.strokeStyle = '#FFD700';
+                ctx.lineWidth = 4;
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = '#FFD700';
+                ctx.strokeRect(-pieceSize/2, -pieceSize/2, pieceSize, pieceSize);
+                
+                // Restore canvas state
+                ctx.restore();
+                
+                // Success message
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.font = 'bold 24px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(`You earned ${this.puzzleName} piece #${this.celebrationPieceNumber + 1}!`, SCREEN_WIDTH / 2, centerY + 100);
+                
+                // Sparkling particles
+                for (let i = 0; i < 20; i++) {
+                    const angle = (i / 20) * Math.PI * 2 + elapsed * 0.01;
+                    const radius = 100 + Math.sin(elapsed * 0.01 + i) * 20;
+                    const sparkleX = centerX + Math.cos(angle) * radius;
+                    const sparkleY = centerY + Math.sin(angle) * radius;
+                    
+                    ctx.fillStyle = '#FFD700';
+                    ctx.font = '20px Arial';
+                    ctx.fillText('✨', sparkleX, sparkleY);
+                }
+            }
+            
             restartGame() {
                 // Reset all game state
                 this.collectedPieces = 0;
                 this.collectedFromBuildings.clear();
                 this.currentScreen = 'town';
                 this.currentBuilding = null;
+                
+                // Reset math state
+                this.currentMathAnswer = null;
+                this.mathFeedback = '';
+                
+                // Reset celebration state
+                this.showCelebration = false;
+                this.puzzleCompletedMusicPlayed = false;
                 
                 // Randomly reassign puzzle pieces
                 this.assignPuzzlePieces();
@@ -726,6 +1145,11 @@
                 // Position player inside building
                 this.player.x = SCREEN_WIDTH / 2 - this.player.size / 2;
                 this.player.y = SCREEN_HEIGHT - 100;
+                
+                // Reset math state when entering a building
+                this.currentMathAnswer = null;
+                this.mathFeedback = '';
+                this.showCelebration = false;
             }
             
             exitBuilding() {
@@ -735,6 +1159,11 @@
                     this.player.x = this.currentBuilding.drivewayX + (this.currentBuilding.drivewayWidth - this.player.size) / 2;
                     this.player.y = this.currentBuilding.drivewayY + 10;
                     this.currentBuilding = null;
+                    
+                    // Reset math state when exiting
+                    this.currentMathAnswer = null;
+                    this.mathFeedback = '';
+                    this.showCelebration = false;
                 }
             }
             
@@ -758,7 +1187,7 @@
                 ctx.fillStyle = COLORS.WHITE;
                 ctx.font = 'bold 18px Arial';
                 ctx.textAlign = 'center';
-                ctx.fillText('Unicorn Puzzle', SIDEBAR_WIDTH / 2, 30);
+                ctx.fillText(`${this.puzzleName} Puzzle`, SIDEBAR_WIDTH / 2, 30);
                 
                 // Collection count
                 ctx.font = 'bold 16px Arial';
@@ -812,14 +1241,14 @@
                             const destY = puzzleStartY + (row * pieceHeight);
                             
                             // Calculate source coordinates
-                            const sourceWidth = this.unicornImage.width / 4;
-                            const sourceHeight = this.unicornImage.height / 2;
+                            const sourceWidth = this.puzzleImage.width / 4;
+                            const sourceHeight = this.puzzleImage.height / 2;
                             const sourceX = col * sourceWidth;
                             const sourceY = row * sourceHeight;
                             
                             // Draw the piece
                             ctx.drawImage(
-                                this.unicornImage,
+                                this.puzzleImage,
                                 sourceX, sourceY, sourceWidth, sourceHeight,
                                 destX + 1, destY + 1, pieceWidth - 2, pieceHeight - 2
                             );
@@ -863,7 +1292,7 @@
                     ctx.font = '24px Arial';
                     ctx.textAlign = 'center';
                     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-                    ctx.fillText('🦄', SIDEBAR_WIDTH / 2, puzzleStartY + puzzleHeight/2);
+                    ctx.fillText(this.puzzleEmoji, SIDEBAR_WIDTH / 2, puzzleStartY + puzzleHeight/2);
                     ctx.font = '12px Arial';
                     ctx.fillText('Loading...', SIDEBAR_WIDTH / 2, puzzleStartY + puzzleHeight/2 + 30);
                 }
@@ -902,11 +1331,15 @@
                     this.checkBuildingEntry();
                 } else {
                     this.checkBuildingExit();
-                    this.checkPuzzlePieceCollection();
                     
                     // Check if all puzzle pieces collected
                     if (this.collectedPieces >= this.totalPuzzlePieces) {
                         this.currentScreen = 'puzzle';
+                        // Play victory music only once when puzzle is completed
+                        if (!this.puzzleCompletedMusicPlayed) {
+                            this.playPuzzleCompletedMusic();
+                            this.puzzleCompletedMusicPlayed = true;
+                        }
                     }
                 }
             }
@@ -922,6 +1355,11 @@
                     this.currentBuilding.drawInterior(this);
                     this.player.draw();
                 }
+                
+                // Draw celebration overlay if active
+                if (this.showCelebration) {
+                    this.drawCelebration();
+                }
             }
             
             drawPuzzleScreen() {
@@ -933,7 +1371,7 @@
                 ctx.fillStyle = COLORS.WHITE;
                 ctx.font = 'bold 48px Arial';
                 ctx.textAlign = 'center';
-                ctx.fillText('🎉 Puzzle Complete! 🎉', SCREEN_WIDTH / 2, 150);
+                ctx.fillText(`🎉 ${this.puzzleName} Puzzle Complete! 🎉`, SCREEN_WIDTH / 2, 150);
                 
                 // Congratulations message
                 ctx.font = '24px Arial';
@@ -946,8 +1384,8 @@
                 const puzzleY = 230;
                 
                 if (this.imageLoaded) {
-                    // Draw the complete unicorn image
-                    ctx.drawImage(this.unicornImage, puzzleX, puzzleY, puzzleWidth, puzzleHeight);
+                    // Draw the complete puzzle image
+                    ctx.drawImage(this.puzzleImage, puzzleX, puzzleY, puzzleWidth, puzzleHeight);
                     
                     // Draw grid lines to show puzzle pieces
                     ctx.strokeStyle = '#FFD700';
@@ -984,7 +1422,17 @@
                     ctx.font = '80px Arial';
                     ctx.textAlign = 'center';
                     ctx.fillStyle = COLORS.BLACK;
-                    ctx.fillText('🦄', SCREEN_WIDTH / 2, puzzleY + puzzleHeight/2 + 25);
+                    ctx.fillText(this.puzzleEmoji, SCREEN_WIDTH / 2, puzzleY + puzzleHeight/2 + 25);
+                }
+                
+                // Attribution under the puzzle
+                ctx.fillStyle = '#888';
+                ctx.font = '12px Arial';
+                ctx.textAlign = 'center';
+                if (this.puzzleType === 'cat') {
+                    ctx.fillText('Cat Graphics Vectors by Vecteezy', SCREEN_WIDTH / 2, puzzleY + puzzleHeight + 20);
+                } else {
+                    ctx.fillText('Unicorn Graphics Vectors by Vecteezy', SCREEN_WIDTH / 2, puzzleY + puzzleHeight + 20);
                 }
                 
                 // Play Again Button
